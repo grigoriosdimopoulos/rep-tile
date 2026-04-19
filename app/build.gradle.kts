@@ -27,6 +27,24 @@ android {
         }
     }
 
+    // Release signing: set these four env vars (or gradle.properties entries)
+    // to sign automatically in CI.  Without them the release APK is unsigned.
+    val storeFilePath: String? = System.getenv("KEYSTORE_FILE")
+    val storePassword: String? = System.getenv("KEYSTORE_PASSWORD")
+    val keyAlias: String? = System.getenv("KEY_ALIAS")
+    val keyPassword: String? = System.getenv("KEY_PASSWORD")
+
+    if (storeFilePath != null && storePassword != null && keyAlias != null && keyPassword != null) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(storeFilePath)
+                this.storePassword = storePassword
+                this.keyAlias = keyAlias
+                this.keyPassword = keyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -35,6 +53,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (storeFilePath != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
         debug {
             isDebuggable = true

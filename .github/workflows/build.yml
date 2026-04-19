@@ -1,0 +1,89 @@
+name: Build APK
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: "temurin"
+
+      # Install a known-good Gradle version to bootstrap the wrapper jar,
+      # which is not stored in the repo (binary file).
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+          cache-read-only: false
+
+      # Accept SDK licenses non-interactively; || true so it never fails the job.
+      - name: Accept Android SDK licenses
+        run: yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
+      # Ensure compileSdk 34 platform and matching build-tools are present.
+      - name: Install required Android SDK components
+        run: |
+          $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
+            "platforms;android-34" \
+            "build-tools;34.0.0"
+
+      # Generate gradle-wrapper.jar from the already-committed
+      # gradle-wrapper.properties (which pins Gradle 8.7).
+      - name: Generate Gradle wrapper
+        run: gradle wrapper --gradle-version 8.7
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      # ── Debug build ──────────────────────────────────────────────────────────
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: rep-tile-debug-${{ github.run_number }}
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 14
+
+      # ── Release build ────────────────────────────────────────────────────────
+      # When the four KEYSTORE_* secrets are set in the repo the APK is signed
+      # and immediately installable.  Without them it is unsigned (still useful
+      # for size/lint checks and sideloading after manual signing).
+      - name: Decode keystore (when secret exists)
+        if: ${{ env.KEYSTORE_BASE64 != '' }}
+        run: echo "$KEYSTORE_BASE64" | base64 --decode > ${{ github.workspace }}/keystore.jks
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+
+      - name: Build release APK
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+        env:
+          KEYSTORE_FILE: ${{ github.workspace }}/keystore.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: rep-tile-release-${{ github.run_number }}
+          path: app/build/outputs/apk/release/*.apk
+          retention-days: 14
