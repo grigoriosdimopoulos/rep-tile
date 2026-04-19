@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Snake eye logo: outer iris ring + slit pupil -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+
+    <!-- Outer dark circle (eye socket) -->
+    <path
+        android:fillColor="#1C1033"
+        android:pathData="M48,4 C23.7,4 4,23.7 4,48 C4,72.3 23.7,92 48,92 C72.3,92 92,72.3 92,48 C92,23.7 72.3,4 48,4 Z" />
+
+    <!-- Outer glow ring (purple) -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#7C3AED"
+        android:strokeWidth="2.5"
+        android:pathData="M48,8 C25.9,8 8,25.9 8,48 C8,70.1 25.9,88 48,88 C70.1,88 88,70.1 88,48 C88,25.9 70.1,8 48,8 Z" />
+
+    <!-- Iris (yellowish-green) -->
+    <path
+        android:fillColor="#A3E635"
+        android:pathData="M48,18 C31.4,18 18,31.4 18,48 C18,64.6 31.4,78 48,78 C64.6,78 78,64.6 78,48 C78,31.4 64.6,18 48,18 Z" />
+
+    <!-- Iris detail ring (darker green) -->
+    <path
+        android:fillColor="#65A30D"
+        android:pathData="M48,22 C33.6,22 22,33.6 22,48 C22,62.4 33.6,74 48,74 C62.4,74 74,62.4 74,48 C74,33.6 62.4,22 48,22 Z" />
+
+    <!-- Inner iris bright ring -->
+    <path
+        android:fillColor="#BEF264"
+        android:pathData="M48,26 C35.8,26 26,35.8 26,48 C26,60.2 35.8,70 48,70 C60.2,70 70,60.2 70,48 C70,35.8 60.2,26 48,26 Z" />
+
+    <!-- Slit pupil (vertical, dark purple) -->
+    <path
+        android:fillColor="#1C1033"
+        android:pathData="M48,30 C44,30 40,38 40,48 C40,58 44,66 48,66 C52,66 56,58 56,48 C56,38 52,30 48,30 Z" />
+
+    <!-- Pupil highlight -->
+    <path
+        android:fillColor="#7C3AED"
+        android:pathData="M46,34 C44.5,36 44,41 44,48 C44,55 44.5,60 46,62 C47,63 47.5,63 47.5,48 C47.5,33 47,33 46,34 Z" />
+
+    <!-- Top specular highlight -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.35"
+        android:pathData="M35,30 C33,33 30,38 30,43 C30,37 33,31 38,27 C36.5,28 35.7,29 35,30 Z" />
+
+</vector>
