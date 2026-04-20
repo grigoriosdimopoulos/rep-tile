@@ -25,7 +25,7 @@ class PoseDetectionAnalyzer @Inject constructor(
     private val _imageSizeFlow = MutableStateFlow<Pair<Int, Int>?>(null)
     val imageSizeFlow: StateFlow<Pair<Int, Int>?> = _imageSizeFlow
 
-    @ExperimentalGetImage
+    @OptIn(ExperimentalGetImage::class)
     override fun analyze(imageProxy: ImageProxy) {
         val mediaImage = imageProxy.image
         if (mediaImage == null) {

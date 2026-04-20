@@ -22,9 +22,6 @@ android {
             useSupportLibrary = true
         }
 
-        ksp {
-            arg("room.schemaLocation", "$projectDir/schemas")
-        }
     }
 
     // Release signing: set these four env vars (or gradle.properties entries)
@@ -137,4 +134,8 @@ dependencies {
 
     // Gson
     implementation(libs.gson)
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
