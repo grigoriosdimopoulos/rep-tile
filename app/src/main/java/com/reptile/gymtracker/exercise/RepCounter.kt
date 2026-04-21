@@ -84,7 +84,7 @@ class RepCounter {
         _stateFlow.value = RepCounterState(ExerciseType.UNKNOWN, 0, 1, ExercisePhase.NEUTRAL, 0f, 0L)
     }
 
-    fun getCurrentRepCount(): Int = detectors[currentExercise]?.getRepCount() ?: 0
+    fun getCurrentRepCount(): Int = detectors[currentExercise]?.currentRepCount() ?: 0
     fun getCurrentSetNumber(): Int = setNumber
     fun getCurrentExercise(): ExerciseType = currentExercise
 }

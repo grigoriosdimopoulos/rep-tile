@@ -38,5 +38,5 @@ abstract class ExercisePhaseDetector {
         lastRepTimestampMs = 0L
     }
 
-    fun getRepCount(): Int = repCount
+    fun currentRepCount(): Int = repCount
 }
