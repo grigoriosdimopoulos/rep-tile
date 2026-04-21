@@ -54,7 +54,15 @@ jobs:
 
       # ── Debug build ──────────────────────────────────────────────────────────
       - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: |
+          ./gradlew assembleDebug --no-daemon 2>&1 | tee /tmp/build.log
+          BUILD_EXIT=${PIPESTATUS[0]}
+          if [ $BUILD_EXIT -ne 0 ]; then
+            echo "::group::Kotlin/KSP compiler errors"
+            grep -E "^e: |^w: |\berror:\b|\[ksp\]" /tmp/build.log | head -60 || true
+            echo "::endgroup::"
+            exit $BUILD_EXIT
+          fi
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
