@@ -26,15 +26,17 @@ android {
 
     // Release signing: set these four env vars (or gradle.properties entries)
     // to sign automatically in CI.  Without them the release APK is unsigned.
-    val storeFilePath: String? = System.getenv("KEYSTORE_FILE")
-    val storePassword: String? = System.getenv("KEYSTORE_PASSWORD")
-    val keyAlias: String? = System.getenv("KEY_ALIAS")
-    val keyPassword: String? = System.getenv("KEY_PASSWORD")
+    val storeFilePath: String? = System.getenv("KEYSTORE_FILE")?.takeIf { it.isNotBlank() }
+    val storePassword: String? = System.getenv("KEYSTORE_PASSWORD")?.takeIf { it.isNotBlank() }
+    val keyAlias: String? = System.getenv("KEY_ALIAS")?.takeIf { it.isNotBlank() }
+    val keyPassword: String? = System.getenv("KEY_PASSWORD")?.takeIf { it.isNotBlank() }
+    val hasSigningSecrets = storeFilePath != null && storePassword != null &&
+            keyAlias != null && keyPassword != null
 
-    if (storeFilePath != null && storePassword != null && keyAlias != null && keyPassword != null) {
+    if (hasSigningSecrets) {
         signingConfigs {
             create("release") {
-                storeFile = file(storeFilePath)
+                storeFile = file(storeFilePath!!)
                 this.storePassword = storePassword
                 this.keyAlias = keyAlias
                 this.keyPassword = keyPassword
@@ -50,7 +52,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            if (storeFilePath != null) {
+            if (hasSigningSecrets) {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
