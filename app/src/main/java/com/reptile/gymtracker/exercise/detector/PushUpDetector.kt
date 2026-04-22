@@ -4,59 +4,34 @@ import com.reptile.gymtracker.camera.model.DetectedPose
 import com.reptile.gymtracker.camera.model.LandmarkType
 import com.reptile.gymtracker.exercise.AngleCalculator
 
+// elbow angle: high = arms extended (top), low = chest near floor → countOnHigh = true
 class PushUpDetector : ExercisePhaseDetector() {
 
-    override fun processFrame(pose: DetectedPose): RepCounterResult {
-        val leftShoulder = pose.landmark(LandmarkType.LEFT_SHOULDER)
-        val leftElbow = pose.landmark(LandmarkType.LEFT_ELBOW)
-        val leftWrist = pose.landmark(LandmarkType.LEFT_WRIST)
-        val rightShoulder = pose.landmark(LandmarkType.RIGHT_SHOULDER)
-        val rightElbow = pose.landmark(LandmarkType.RIGHT_ELBOW)
-        val rightWrist = pose.landmark(LandmarkType.RIGHT_WRIST)
+    override val countOnHigh = true
 
-        if (leftShoulder == null || leftElbow == null || leftWrist == null ||
-            rightShoulder == null || rightElbow == null || rightWrist == null
-        ) {
+    override fun processFrame(pose: DetectedPose): RepCounterResult {
+        val lShoulder = pose.landmark(LandmarkType.LEFT_SHOULDER)
+        val lElbow = pose.landmark(LandmarkType.LEFT_ELBOW)
+        val lWrist = pose.landmark(LandmarkType.LEFT_WRIST)
+        val rShoulder = pose.landmark(LandmarkType.RIGHT_SHOULDER)
+        val rElbow = pose.landmark(LandmarkType.RIGHT_ELBOW)
+        val rWrist = pose.landmark(LandmarkType.RIGHT_WRIST)
+
+        if (lShoulder == null || lElbow == null || lWrist == null ||
+            rShoulder == null || rElbow == null || rWrist == null) {
             return RepCounterResult(repCount, currentPhase, false, 0f)
         }
 
-        val confidence = pose.avgConfidence(
-            listOf(LandmarkType.LEFT_SHOULDER, LandmarkType.LEFT_ELBOW, LandmarkType.LEFT_WRIST,
-                LandmarkType.RIGHT_SHOULDER, LandmarkType.RIGHT_ELBOW, LandmarkType.RIGHT_WRIST)
-        )
-        if (confidence < 0.5f) {
-            return RepCounterResult(repCount, currentPhase, false, confidence)
-        }
+        val confidence = pose.avgConfidence(listOf(
+            LandmarkType.LEFT_SHOULDER, LandmarkType.LEFT_ELBOW, LandmarkType.LEFT_WRIST,
+            LandmarkType.RIGHT_SHOULDER, LandmarkType.RIGHT_ELBOW, LandmarkType.RIGHT_WRIST
+        ))
+        if (confidence < 0.4f) return RepCounterResult(repCount, currentPhase, false, confidence)
 
-        val leftElbowAngle = AngleCalculator.angleDegrees(leftShoulder, leftElbow, leftWrist)
-        val rightElbowAngle = AngleCalculator.angleDegrees(rightShoulder, rightElbow, rightWrist)
-        val avgElbowAngle = (leftElbowAngle + rightElbowAngle) / 2f
+        val avgElbowAngle = (AngleCalculator.angleDegrees(lShoulder, lElbow, lWrist) +
+                             AngleCalculator.angleDegrees(rShoulder, rElbow, rWrist)) / 2f
 
-        var repJustCompleted = false
-
-        when (currentPhase) {
-            ExercisePhase.NEUTRAL -> {
-                if (avgElbowAngle < 100f) {
-                    consecutivePhaseFrames++
-                    if (consecutivePhaseFrames >= debounceFrames) {
-                        currentPhase = ExercisePhase.DOWN
-                        consecutivePhaseFrames = 0
-                    }
-                } else consecutivePhaseFrames = 0
-            }
-            ExercisePhase.DOWN -> {
-                if (avgElbowAngle > 155f) {
-                    consecutivePhaseFrames++
-                    if (consecutivePhaseFrames >= debounceFrames) {
-                        currentPhase = ExercisePhase.NEUTRAL
-                        consecutivePhaseFrames = 0
-                        repJustCompleted = tryCountRep(pose.timestampMs)
-                    }
-                } else consecutivePhaseFrames = 0
-            }
-            else -> currentPhase = ExercisePhase.NEUTRAL
-        }
-
-        return RepCounterResult(repCount, currentPhase, repJustCompleted, confidence)
+        val counted = trackAngle(avgElbowAngle, pose.timestampMs)
+        return RepCounterResult(repCount, currentPhase, counted, confidence)
     }
 }
