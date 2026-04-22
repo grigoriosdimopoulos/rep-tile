@@ -3,7 +3,9 @@ package com.reptile.gymtracker.ui.settings
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.CameraSelector
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -25,6 +27,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -43,7 +46,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.reptile.gymtracker.data.export.ImportResult
@@ -66,13 +68,14 @@ fun SettingsScreen(
     val preferences by viewModel.preferences.collectAsStateWithLifecycle()
     val exportUri by viewModel.exportUri.collectAsStateWithLifecycle()
     val importResult by viewModel.importResult.collectAsStateWithLifecycle()
+    val profileSaved by viewModel.profileSaved.collectAsStateWithLifecycle()
 
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
     var showImportStrategyDialog by remember { mutableStateOf(false) }
     var pendingImportUri by remember { mutableStateOf<android.net.Uri?>(null) }
 
-    // Profile form state
+    // Profile form state — resets when saved profile loads back from DB
     var name by remember(profile) { mutableStateOf(profile?.name ?: "") }
     var age by remember(profile) { mutableIntStateOf(profile?.ageYears ?: 25) }
     var weightKg by remember(profile) { mutableFloatStateOf(profile?.weightKg ?: 70f) }
@@ -82,7 +85,6 @@ fun SettingsScreen(
         mutableStateOf(profile?.activityLevel ?: ActivityLevel.MODERATE)
     }
 
-    // File picker for import
     val importLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -92,7 +94,13 @@ fun SettingsScreen(
         }
     }
 
-    // Handle export URI
+    LaunchedEffect(profileSaved) {
+        if (profileSaved) {
+            snackbarHostState.showSnackbar("Profile saved")
+            viewModel.clearProfileSaved()
+        }
+    }
+
     LaunchedEffect(exportUri) {
         exportUri?.let { uri ->
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
@@ -105,7 +113,6 @@ fun SettingsScreen(
         }
     }
 
-    // Handle import result
     LaunchedEffect(importResult) {
         importResult?.let { result ->
             val msg = when (result) {
@@ -135,175 +142,222 @@ fun SettingsScreen(
         )
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .statusBarsPadding()
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onNavigateBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "Back")
-            }
-            Text(
-                text = "Settings",
-                style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.padding(start = 4.dp)
-            )
-        }
-
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        containerColor = BackgroundDark
+    ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(innerPadding)
+                .statusBarsPadding()
         ) {
-            // Profile section
-            SectionHeader("Profile")
-            Card(colors = CardDefaults.cardColors(containerColor = SurfaceDark)) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
-                        label = { Text("Name") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onNavigateBack) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                }
+                Text(
+                    text = "Settings",
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.padding(start = 4.dp)
+                )
+            }
 
-                    // Age slider
-                    Column {
-                        Text("Age: $age", style = MaterialTheme.typography.bodyMedium)
-                        Slider(
-                            value = age.toFloat(),
-                            onValueChange = { age = it.roundToInt() },
-                            valueRange = 13f..100f,
-                            steps = 86
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // ── Profile ──────────────────────────────────────────────
+                SectionHeader("Profile")
+                Card(colors = CardDefaults.cardColors(containerColor = SurfaceDark)) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = name,
+                            onValueChange = { name = it },
+                            label = { Text("Name") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
                         )
-                    }
 
-                    // Weight slider
-                    Column {
-                        Text(
-                            "Weight: ${weightKg.roundToInt()} kg",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Slider(
-                            value = weightKg,
-                            onValueChange = { weightKg = it },
-                            valueRange = 30f..250f
-                        )
-                    }
-
-                    // Height slider
-                    Column {
-                        Text(
-                            "Height: ${heightCm.roundToInt()} cm",
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        Slider(
-                            value = heightCm,
-                            onValueChange = { heightCm = it },
-                            valueRange = 100f..250f
-                        )
-                    }
-
-                    // Gender
-                    Text("Gender", style = MaterialTheme.typography.bodyMedium)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Gender.entries.forEach { g ->
-                            FilterButton(
-                                label = g.displayName,
-                                selected = gender == g,
-                                onClick = { gender = g }
+                        Column {
+                            Text("Age: $age", style = MaterialTheme.typography.bodyMedium)
+                            Slider(
+                                value = age.toFloat(),
+                                onValueChange = { age = it.roundToInt() },
+                                valueRange = 13f..100f,
+                                steps = 86
                             )
                         }
-                    }
 
-                    // Activity level
-                    Text("Activity Level", style = MaterialTheme.typography.bodyMedium)
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        ActivityLevel.entries.forEach { level ->
-                            FilterButton(
-                                label = level.displayName,
-                                selected = activityLevel == level,
-                                onClick = { activityLevel = level },
-                                modifier = Modifier.fillMaxWidth()
+                        Column {
+                            Text(
+                                "Weight: ${weightKg.roundToInt()} kg",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Slider(
+                                value = weightKg,
+                                onValueChange = { weightKg = it },
+                                valueRange = 30f..250f
                             )
                         }
-                    }
 
-                    Button(
-                        onClick = {
-                            viewModel.saveProfile(
-                                UserProfile(
-                                    name = name,
-                                    ageYears = age,
-                                    weightKg = weightKg,
-                                    heightCm = heightCm,
-                                    gender = gender,
-                                    activityLevel = activityLevel
+                        Column {
+                            Text(
+                                "Height: ${heightCm.roundToInt()} cm",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Slider(
+                                value = heightCm,
+                                onValueChange = { heightCm = it },
+                                valueRange = 100f..250f
+                            )
+                        }
+
+                        Text("Gender", style = MaterialTheme.typography.bodyMedium)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Gender.entries.forEach { g ->
+                                FilterButton(
+                                    label = g.displayName,
+                                    selected = gender == g,
+                                    onClick = { gender = g }
                                 )
+                            }
+                        }
+
+                        Text("Activity Level", style = MaterialTheme.typography.bodyMedium)
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            ActivityLevel.entries.forEach { level ->
+                                FilterButton(
+                                    label = level.displayName,
+                                    selected = activityLevel == level,
+                                    onClick = { activityLevel = level },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
+
+                        Button(
+                            onClick = {
+                                viewModel.saveProfile(
+                                    UserProfile(
+                                        name = name,
+                                        ageYears = age,
+                                        weightKg = weightKg,
+                                        heightCm = heightCm,
+                                        gender = gender,
+                                        activityLevel = activityLevel
+                                    )
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = GreenAccent,
+                                contentColor = BackgroundDark
                             )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = GreenAccent,
-                            contentColor = BackgroundDark
-                        )
-                    ) {
-                        Text("Save Profile", fontWeight = FontWeight.Bold)
+                        ) {
+                            Text("Save Profile", fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
-            }
 
-            // Units section
-            SectionHeader("Units")
-            Card(colors = CardDefaults.cardColors(containerColor = SurfaceDark)) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Use Imperial (lbs/ft)", style = MaterialTheme.typography.bodyMedium)
-                    Switch(
+                // ── Workout preferences ───────────────────────────────────
+                SectionHeader("Workout")
+                Card(colors = CardDefaults.cardColors(containerColor = SurfaceDark)) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        PreferenceSwitch(
+                            label = "Auto-detect exercise",
+                            description = "Automatically identify what you're doing",
+                            checked = preferences.autoDetectExercise,
+                            onCheckedChange = { viewModel.setAutoDetectExercise(it) }
+                        )
+                        PreferenceSwitch(
+                            label = "Rep sound",
+                            description = "Play a sound when a rep is counted",
+                            checked = preferences.repSoundEnabled,
+                            onCheckedChange = { viewModel.setRepSoundEnabled(it) }
+                        )
+                        PreferenceSwitch(
+                            label = "Front camera",
+                            description = "Use front-facing camera (off = rear)",
+                            checked = preferences.cameraLensFacing == CameraSelector.LENS_FACING_FRONT,
+                            onCheckedChange = { viewModel.setCameraFacingFront(it) }
+                        )
+                    }
+                }
+
+                // ── Units ─────────────────────────────────────────────────
+                SectionHeader("Units")
+                Card(colors = CardDefaults.cardColors(containerColor = SurfaceDark)) {
+                    PreferenceSwitch(
+                        label = "Use Imperial (lbs/ft)",
                         checked = preferences.useImperialUnits,
-                        onCheckedChange = { viewModel.setImperialUnits(it) }
+                        onCheckedChange = { viewModel.setImperialUnits(it) },
+                        modifier = Modifier.padding(16.dp)
                     )
                 }
-            }
 
-            // Data section
-            SectionHeader("Data")
-            Card(colors = CardDefaults.cardColors(containerColor = SurfaceDark)) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Button(
-                        onClick = { viewModel.exportData() },
-                        modifier = Modifier.fillMaxWidth()
+                // ── Data ──────────────────────────────────────────────────
+                SectionHeader("Data")
+                Card(colors = CardDefaults.cardColors(containerColor = SurfaceDark)) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text("Export Data")
-                    }
-                    OutlinedButton(
-                        onClick = { importLauncher.launch(arrayOf("application/json")) },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Import Data")
+                        Button(
+                            onClick = { viewModel.exportData() },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Export Data")
+                        }
+                        OutlinedButton(
+                            onClick = { importLauncher.launch(arrayOf("application/json")) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Import Data")
+                        }
                     }
                 }
-            }
 
-            Spacer(Modifier.height(32.dp))
+                Spacer(Modifier.height(32.dp))
+            }
         }
     }
+}
 
-    SnackbarHost(hostState = snackbarHostState)
+@Composable
+private fun PreferenceSwitch(
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    description: String? = null
+) {
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+            Text(label, style = MaterialTheme.typography.bodyMedium)
+            if (description != null) {
+                Text(
+                    description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
 }
 
 @Composable

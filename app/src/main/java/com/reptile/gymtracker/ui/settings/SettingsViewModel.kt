@@ -45,15 +45,37 @@ class SettingsViewModel @Inject constructor(
     private val _importResult = MutableStateFlow<ImportResult?>(null)
     val importResult: StateFlow<ImportResult?> = _importResult
 
+    private val _profileSaved = MutableStateFlow(false)
+    val profileSaved: StateFlow<Boolean> = _profileSaved
+
     fun saveProfile(profile: UserProfile) {
         viewModelScope.launch {
             userProfileRepository.saveProfile(profile)
+            _profileSaved.value = true
         }
     }
 
+    fun clearProfileSaved() {
+        _profileSaved.value = false
+    }
+
     fun setImperialUnits(imperial: Boolean) {
+        viewModelScope.launch { userPreferencesDataStore.setImperialUnits(imperial) }
+    }
+
+    fun setRepSoundEnabled(enabled: Boolean) {
+        viewModelScope.launch { userPreferencesDataStore.setRepSoundEnabled(enabled) }
+    }
+
+    fun setAutoDetectExercise(enabled: Boolean) {
+        viewModelScope.launch { userPreferencesDataStore.setAutoDetectExercise(enabled) }
+    }
+
+    fun setCameraFacingFront(front: Boolean) {
         viewModelScope.launch {
-            userPreferencesDataStore.setImperialUnits(imperial)
+            val facing = if (front) androidx.camera.core.CameraSelector.LENS_FACING_FRONT
+                         else androidx.camera.core.CameraSelector.LENS_FACING_BACK
+            userPreferencesDataStore.setCameraLensFacing(facing)
         }
     }
 

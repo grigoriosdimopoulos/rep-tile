@@ -3,6 +3,7 @@ package com.reptile.gymtracker.ui.activesession
 import android.Manifest
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,16 +14,30 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -42,6 +57,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
 import dagger.hilt.android.EntryPointAccessors
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -49,6 +65,7 @@ import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import com.reptile.gymtracker.camera.CameraManager
+import com.reptile.gymtracker.data.model.ExerciseType
 import com.reptile.gymtracker.ui.components.ConfirmDialog
 import com.reptile.gymtracker.ui.components.PoseOverlayCanvas
 import com.reptile.gymtracker.ui.components.RepCounterDisplay
@@ -77,6 +94,7 @@ fun ActiveSessionScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val context = LocalContext.current
     var showEndSessionDialog by remember { mutableStateOf(false) }
+    var showExerciseSelector by remember { mutableStateOf(false) }
 
     val cameraManager = remember {
         EntryPointAccessors.fromApplication(
@@ -111,6 +129,22 @@ fun ActiveSessionScreen(
                 viewModel.endSession()
             },
             onDismiss = { showEndSessionDialog = false }
+        )
+    }
+
+    if (showExerciseSelector) {
+        ExerciseSelectorDialog(
+            current = uiState.detectedExercise,
+            isLocked = uiState.isExerciseLocked,
+            onSelect = { type ->
+                viewModel.lockExercise(type)
+                showExerciseSelector = false
+            },
+            onAutoDetect = {
+                viewModel.unlockExercise()
+                showExerciseSelector = false
+            },
+            onDismiss = { showExerciseSelector = false }
         )
     }
 
@@ -167,16 +201,31 @@ fun ActiveSessionScreen(
                     .navigationBarsPadding(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                // Exercise name row — tappable to select/lock
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { showExerciseSelector = true }
+                        .padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = uiState.detectedExercise.displayName,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = GreenAccent
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = uiState.detectedExercise.displayName,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = GreenAccent
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Icon(
+                            imageVector = if (uiState.isExerciseLocked) Icons.Default.Lock
+                                          else Icons.Default.Edit,
+                            contentDescription = if (uiState.isExerciseLocked) "Locked" else "Select exercise",
+                            tint = GreenAccent.copy(alpha = if (uiState.isExerciseLocked) 1f else 0.55f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
                     Text(
                         text = "Set ${uiState.setNumber}",
                         style = MaterialTheme.typography.titleMedium,
@@ -184,7 +233,47 @@ fun ActiveSessionScreen(
                     )
                 }
 
-                RepCounterDisplay(repCount = uiState.repCount)
+                // Rep counter with manual ± buttons
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    IconButton(
+                        onClick = { viewModel.adjustReps(-1) },
+                        enabled = uiState.repCount > 0,
+                        modifier = Modifier
+                            .size(44.dp)
+                            .background(
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                CircleShape
+                            )
+                    ) {
+                        Icon(
+                            Icons.Default.Remove,
+                            contentDescription = "Remove rep",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    RepCounterDisplay(
+                        repCount = uiState.repCount,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    IconButton(
+                        onClick = { viewModel.adjustReps(1) },
+                        modifier = Modifier
+                            .size(44.dp)
+                            .background(GreenAccent.copy(alpha = 0.15f), CircleShape)
+                    ) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = "Add rep",
+                            tint = GreenAccent
+                        )
+                    }
+                }
 
                 Spacer(Modifier.height(16.dp))
 
@@ -219,6 +308,76 @@ fun ActiveSessionScreen(
                     ) {
                         Icon(Icons.Default.Stop, contentDescription = "End Session")
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExerciseSelectorDialog(
+    current: ExerciseType,
+    isLocked: Boolean,
+    onSelect: (ExerciseType) -> Unit,
+    onAutoDetect: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val exercises = remember {
+        ExerciseType.entries.filter { it != ExerciseType.UNKNOWN }
+    }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = SurfaceDark),
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    "Select Exercise",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.height(220.dp)
+                ) {
+                    items(exercises) { type ->
+                        val selected = isLocked && current == type
+                        if (selected) {
+                            Button(
+                                onClick = { onSelect(type) },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = GreenAccent,
+                                    contentColor = BackgroundDark
+                                )
+                            ) {
+                                Text(
+                                    type.displayName,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        } else {
+                            OutlinedButton(onClick = { onSelect(type) }) {
+                                Text(type.displayName, style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
+                    }
+                }
+
+                OutlinedButton(
+                    onClick = onAutoDetect,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.LockOpen, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Auto-detect")
                 }
             }
         }

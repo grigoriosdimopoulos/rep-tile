@@ -70,6 +70,18 @@ class RepCounter {
         )
     }
 
+    fun forceExercise(type: ExerciseType) {
+        currentExercise = type
+        detectors[type]?.reset()
+        _stateFlow.value = RepCounterState(type, 0, setNumber, ExercisePhase.NEUTRAL, 0f, 0L)
+    }
+
+    fun adjustRepCount(delta: Int) {
+        val detector = detectors[currentExercise] ?: return
+        detector.adjustRepCount(delta)
+        _stateFlow.value = _stateFlow.value.copy(repCount = detector.currentRepCount())
+    }
+
     fun startNewSet() {
         detectors[currentExercise]?.reset()
         setNumber++

@@ -30,7 +30,8 @@ data class ActiveSessionUiState(
     val currentPose: DetectedPose? = null,
     val exerciseConfidence: Float = 0f,
     val isEnded: Boolean = false,
-    val currentPhase: ExercisePhase = ExercisePhase.NEUTRAL
+    val currentPhase: ExercisePhase = ExercisePhase.NEUTRAL,
+    val isExerciseLocked: Boolean = false
 )
 
 @HiltViewModel
@@ -97,6 +98,21 @@ class ActiveSessionViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    fun lockExercise(type: ExerciseType) {
+        exerciseDetector.lockExercise(type)
+        _uiState.update { it.copy(isExerciseLocked = true, detectedExercise = type, repCount = 0) }
+    }
+
+    fun unlockExercise() {
+        exerciseDetector.unlockExercise()
+        _uiState.update { it.copy(isExerciseLocked = false, detectedExercise = ExerciseType.UNKNOWN) }
+    }
+
+    fun adjustReps(delta: Int) {
+        exerciseDetector.adjustRepCount(delta)
+        _uiState.update { it.copy(repCount = exerciseDetector.getCurrentRepCount()) }
     }
 
     fun pauseResume() {

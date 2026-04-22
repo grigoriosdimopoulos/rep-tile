@@ -31,6 +31,10 @@ abstract class ExercisePhaseDetector {
         return false
     }
 
+    fun adjustRepCount(delta: Int) {
+        repCount = maxOf(0, repCount + delta)
+    }
+
     fun reset() {
         currentPhase = ExercisePhase.NEUTRAL
         repCount = 0
