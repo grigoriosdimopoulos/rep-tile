@@ -12,56 +12,51 @@ data class RepCounterResult(
 )
 
 /**
- * Adaptive rep counter — no fixed angle thresholds.
+ * Adaptive rep counter — calibrates to the person's own range of motion.
  *
- * Algorithm:
- *  1. EMA-smooth the raw angle signal to remove per-frame jitter.
- *  2. Track a decaying peak (max) and valley (min) that follow the signal
- *     slowly downward / upward so they always represent "recent best".
- *  3. A phase transition fires when the smoothed angle moves more than
- *     TRANSITION_FRACTION of the observed range away from the peak/valley.
- *  4. A rep is counted once both transitions complete (high→low→high or
- *     low→high→low depending on the exercise).
- *
- * This adapts automatically to every person's range of motion and camera
- * angle — nothing is hard-coded in degrees.
+ * Key invariant that prevents micro-movements from counting:
+ *   A rep is only counted when the angle traversed ≥ TRANSITION_FRACTION of the
+ *   observed range on the WAY DOWN *and* ≥ MIN_DEPTH_FRACTION of the full
+ *   peak→valley span is actually reached during the DOWN phase.
+ *   A casual weight-shift or stance adjustment is typically 20-35 % of the full
+ *   squat/press range — both guards together raise the bar well above that.
  */
 abstract class ExercisePhaseDetector {
 
-    // ── state visible to subclasses ──────────────────────────────────────────
+    // ── subclass-visible state ────────────────────────────────────────────────
     protected var currentPhase: ExercisePhase = ExercisePhase.NEUTRAL
     protected var repCount: Int = 0
     protected var consecutivePhaseFrames: Int = 0
 
-    // ── adaptive signal tracking (private) ───────────────────────────────────
+    // ── adaptive signal ───────────────────────────────────────────────────────
     private var emaAngle: Float = Float.NaN
-    private var peakAngle: Float = Float.NaN   // decays slowly toward current
-    private var valleyAngle: Float = Float.NaN // decays slowly toward current
+    private var peakAngle: Float = Float.NaN
+    private var valleyAngle: Float = Float.NaN
     private var lastRepTimestampMs: Long = 0L
 
-    // ── tuneable constants ────────────────────────────────────────────────────
-    private val emaAlpha = 0.35f          // smoothing (higher = faster but noisier)
-    private val peakValleyDecay = 0.997f  // half-life ≈ 230 frames ≈ 7-8 s at 30 fps
-    private val transitionFraction = 0.38f // fraction of range that triggers phase change
-    private val minRangeOfMotion = 18f    // degrees — ignore tiny fidgets
-    private val minRepIntervalMs = 380L   // max rep frequency guard
-    protected val debounceFrames = 2      // consecutive frames needed to confirm phase
+    // Depth tracking: how deep did the angle actually go during the DOWN phase?
+    private var downPhaseMinAngle: Float = Float.NaN   // for countOnHigh
+    private var upPhaseMaxAngle: Float = Float.NaN     // for !countOnHigh
+    private var framesInActivePhase: Int = 0            // min dwell guard
 
-    /**
-     * true  → rest position has HIGH angle (squat, push-up, curl, deadlift, lunge)
-     *          rep = high → low → high
-     * false → rest position has LOW angle (shoulder press)
-     *          rep = low → high → low
-     */
+    // ── constants ─────────────────────────────────────────────────────────────
+    private val emaAlpha = 0.25f           // more smoothing → less jitter
+    private val peakValleyDecay = 0.998f   // peak/valley half-life ≈ 350 frames ≈ ~12 s
+    private val transitionFraction = 0.55f // 55 % of range to enter/exit DOWN phase
+    private val minDepthFraction = 0.60f   // must reach 60 % into range to count the rep
+    private val minDwellFrames = 4         // stay in DOWN/UP for ≥ 4 frames (~130 ms)
+    private val minRangeOfMotion = 25f     // ignore anything smaller than 25 °
+    private val minRepIntervalMs = 500L
+    protected val debounceFrames = 3
+
+    /** Override in subclasses to choose which direction is the "rest" position. */
     protected open val countOnHigh: Boolean = true
 
-    // ── public API ───────────────────────────────────────────────────────────
+    // ── public API ────────────────────────────────────────────────────────────
 
     abstract fun processFrame(pose: DetectedPose): RepCounterResult
 
-    fun adjustRepCount(delta: Int) {
-        repCount = maxOf(0, repCount + delta)
-    }
+    fun adjustRepCount(delta: Int) { repCount = maxOf(0, repCount + delta) }
 
     fun reset() {
         currentPhase = if (countOnHigh) ExercisePhase.NEUTRAL else ExercisePhase.DOWN
@@ -71,53 +66,66 @@ abstract class ExercisePhaseDetector {
         emaAngle = Float.NaN
         peakAngle = Float.NaN
         valleyAngle = Float.NaN
+        downPhaseMinAngle = Float.NaN
+        upPhaseMaxAngle = Float.NaN
+        framesInActivePhase = 0
     }
 
     fun currentRepCount(): Int = repCount
 
-    // ── core adaptive tracking ────────────────────────────────────────────────
+    // ── core tracking ─────────────────────────────────────────────────────────
 
-    /**
-     * Call once per frame with the raw joint angle and the frame timestamp.
-     * Returns true on the frame a rep is confirmed.
-     */
     protected fun trackAngle(rawAngle: Float, timestampMs: Long): Boolean {
         // 1. EMA smoothing
         emaAngle = if (emaAngle.isNaN()) rawAngle
                    else emaAngle * (1f - emaAlpha) + rawAngle * emaAlpha
 
-        // 2. Adaptive peak/valley — rise instantly to new max/min, decay slowly otherwise
+        // 2. Adaptive watermarks
         peakAngle = if (peakAngle.isNaN()) emaAngle
-                    else maxOf(emaAngle, peakAngle * peakValleyDecay + emaAngle * (1f - peakValleyDecay))
+                    else maxOf(emaAngle,
+                        peakAngle * peakValleyDecay + emaAngle * (1f - peakValleyDecay))
         valleyAngle = if (valleyAngle.isNaN()) emaAngle
-                      else minOf(emaAngle, valleyAngle * peakValleyDecay + emaAngle * (1f - peakValleyDecay))
+                      else minOf(emaAngle,
+                          valleyAngle * peakValleyDecay + emaAngle * (1f - peakValleyDecay))
 
         val range = peakAngle - valleyAngle
         if (range < minRangeOfMotion) return false
 
-        val threshold = range * transitionFraction
+        val trigger = range * transitionFraction      // to enter opposite phase
+        val requiredDepth = range * minDepthFraction  // min excursion to count a rep
 
-        return if (countOnHigh) detectHighToLow(threshold, timestampMs)
-               else detectLowToHigh(threshold, timestampMs)
+        return if (countOnHigh) detectHighToLow(trigger, requiredDepth, timestampMs)
+               else detectLowToHigh(trigger, requiredDepth, timestampMs)
     }
 
-    // high (NEUTRAL) → low (DOWN) → high (NEUTRAL) + count
-    private fun detectHighToLow(threshold: Float, timestampMs: Long): Boolean {
+    // ── high→low→high (squat, push-up, curl, deadlift, lunge) ────────────────
+
+    private fun detectHighToLow(trigger: Float, requiredDepth: Float, timestampMs: Long): Boolean {
         when (currentPhase) {
             ExercisePhase.NEUTRAL -> {
-                if (emaAngle < peakAngle - threshold) {
+                if (emaAngle < peakAngle - trigger) {
                     if (++consecutivePhaseFrames >= debounceFrames) {
                         currentPhase = ExercisePhase.DOWN
                         consecutivePhaseFrames = 0
+                        framesInActivePhase = 0
+                        downPhaseMinAngle = emaAngle
                     }
                 } else consecutivePhaseFrames = 0
             }
             ExercisePhase.DOWN -> {
-                if (emaAngle > valleyAngle + threshold) {
+                framesInActivePhase++
+                // Track how deep we actually went
+                if (emaAngle < downPhaseMinAngle) downPhaseMinAngle = emaAngle
+
+                if (emaAngle > valleyAngle + trigger) {
                     if (++consecutivePhaseFrames >= debounceFrames) {
+                        val wentDeepEnough = downPhaseMinAngle <= peakAngle - requiredDepth
+                        val heldLongEnough = framesInActivePhase >= minDwellFrames
                         currentPhase = ExercisePhase.NEUTRAL
                         consecutivePhaseFrames = 0
-                        return tryCountRep(timestampMs)
+                        framesInActivePhase = 0
+                        downPhaseMinAngle = Float.NaN
+                        if (wentDeepEnough && heldLongEnough) return tryCountRep(timestampMs)
                     }
                 } else consecutivePhaseFrames = 0
             }
@@ -126,23 +134,33 @@ abstract class ExercisePhaseDetector {
         return false
     }
 
-    // low (DOWN) → high (UP) → low (DOWN) + count
-    private fun detectLowToHigh(threshold: Float, timestampMs: Long): Boolean {
+    // ── low→high→low (shoulder press) ────────────────────────────────────────
+
+    private fun detectLowToHigh(trigger: Float, requiredDepth: Float, timestampMs: Long): Boolean {
         when (currentPhase) {
             ExercisePhase.DOWN -> {
-                if (emaAngle > valleyAngle + threshold) {
+                if (emaAngle > valleyAngle + trigger) {
                     if (++consecutivePhaseFrames >= debounceFrames) {
                         currentPhase = ExercisePhase.UP
                         consecutivePhaseFrames = 0
+                        framesInActivePhase = 0
+                        upPhaseMaxAngle = emaAngle
                     }
                 } else consecutivePhaseFrames = 0
             }
             ExercisePhase.UP -> {
-                if (emaAngle < peakAngle - threshold) {
+                framesInActivePhase++
+                if (emaAngle > upPhaseMaxAngle) upPhaseMaxAngle = emaAngle
+
+                if (emaAngle < peakAngle - trigger) {
                     if (++consecutivePhaseFrames >= debounceFrames) {
+                        val wentHighEnough = upPhaseMaxAngle >= valleyAngle + requiredDepth
+                        val heldLongEnough = framesInActivePhase >= minDwellFrames
                         currentPhase = ExercisePhase.DOWN
                         consecutivePhaseFrames = 0
-                        return tryCountRep(timestampMs)
+                        framesInActivePhase = 0
+                        upPhaseMaxAngle = Float.NaN
+                        if (wentHighEnough && heldLongEnough) return tryCountRep(timestampMs)
                     }
                 } else consecutivePhaseFrames = 0
             }
